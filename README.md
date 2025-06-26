@@ -57,7 +57,7 @@ Some codes are based on [TextMonkey](https://github.com/Yuliang-Liu/Monkey) and 
 
 # DocKylin Pipeline
 
-This project implements the DocKylin training and instruction tuning pipeline, including Adaptive Pixel Slimming (APS), Dynamic Token Slimming (DTS), and integration with Qwen-7B-Chat for instruction tuning.
+This project implements the DocKylin training and instruction tuning pipeline, including Adaptive Pixel Slimming (APS), Dynamic Token Slimming (DTS), and integration with Qwen-VL for multi-modal instruction tuning.
 
 ## Requirements
 
@@ -66,36 +66,50 @@ This project implements the DocKylin training and instruction tuning pipeline, i
 - OpenCV (`opencv-python`)
 - NumPy
 - kmeans-pytorch
-- transformers (for Qwen-7B-Chat)
+- transformers (for Qwen-VL)
+- timm (for Swin Transformer)
+- Pillow
 
 Install dependencies:
 
 ```bash
-pip install torch opencv-python numpy kmeans-pytorch transformers
+pip install torch opencv-python numpy kmeans-pytorch transformers timm pillow
 ```
 
-## Download Qwen-7B-Chat
+## Supported Datasets
 
-The pipeline uses the Qwen-7B-Chat model from HuggingFace. The model will be downloaded automatically the first time you run the code, but you can also download it manually:
+- **DocVQA**
+- **InfoVQA**
+- **SROIE**
+- **FUNSD**
 
-```python
-from transformers import AutoModelForCausalLM, AutoTokenizer
-AutoTokenizer.from_pretrained("Qwen/Qwen-7B-Chat", trust_remote_code=True)
-AutoModelForCausalLM.from_pretrained("Qwen/Qwen-7B-Chat", trust_remote_code=True)
-```
+You must download and extract these datasets yourself. Update the `dataset_root` variable in `main_pipeline.py` to point to the root directory of your chosen dataset. The expected folder structure is:
+
+- DocVQA: `images/` and annotation JSON (e.g., `val_v1.0.json`)
+- InfoVQA: `images/` and annotation JSON (e.g., `val.json`)
+- SROIE: `img/` and `annotations/`
+- FUNSD: `images/` and `annotations/`
 
 ## Running the Pipeline
 
-From the `DocKylin` directory, run:
+Edit the following lines in `main_pipeline.py` to select your dataset and set the correct path:
+
+```python
+dataset_name = 'docvqa'  # or 'infovqa', 'sroie', 'funsd'
+dataset_root = '/path/to/your/dataset'  # <-- Set this path
+split = 'val'  # or 'train', as needed
+```
+
+Then run:
 
 ```bash
 python main_pipeline.py
 ```
 
-- The script will first run the pre-training stage (APS, MLP, LLM frozen).
-- Then it will run the instruction tuning stage (APS, DTS, and Qwen-7B-Chat for text generation).
+- The script will first run the pre-training stage (APS, Swin, MLP, DTS, LLM frozen).
+- Then it will run the instruction tuning stage (APS, Qwen-VL for multi-modal text generation).
 
-> **Note:** The current pipeline uses dummy data and a minimal visual encoder/MLP for demonstration. Replace these with your actual models and datasets for real training.
+> **Note:** The pipeline expects the datasets to be pre-downloaded and extracted. Annotation parsing is minimal and may need adjustment for your specific dataset version.
 
 ## Files
 
@@ -105,14 +119,15 @@ python main_pipeline.py
 
 ## Customization
 
-- To use your own dataset, replace `DummyDataset` in `main_pipeline.py`.
-- To use a real visual encoder, replace the `VisualEncoder` class.
-- To connect visual features to Qwen-7B-Chat, implement a vision-language head or use a multi-modal version of Qwen if available.
+- To use your own dataset, add a new dataset class and update `get_dataset()` in `main_pipeline.py`.
+- To use a different visual encoder, modify the `SwinVisualEncoder` class.
+- For more advanced multi-modal fusion, further customize the Qwen-VL integration.
 
 ## Troubleshooting
 
 - If you see `ImportError: No module named 'transformers'`, install the required package with `pip install transformers`.
 - For CUDA support, ensure you have a compatible GPU and PyTorch installed with CUDA support.
+- If you see file not found errors, check that your dataset paths and folder structure match the expected format.
 
 ## License
 
