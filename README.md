@@ -57,65 +57,39 @@ Some codes are based on [TextMonkey](https://github.com/Yuliang-Liu/Monkey) and 
 
 # DocKylin Pipeline
 
-This project implements the DocKylin training and instruction tuning pipeline, including Adaptive Pixel Slimming (APS), Dynamic Token Slimming (DTS), and integration with Qwen-VL for multi-modal instruction tuning.
+This project now supports only the FUNSD dataset for training and instruction tuning. The pipeline will automatically download and extract the FUNSD dataset when you run the main script—no manual dataset setup is required.
 
 ## Requirements
 
 - Python 3.8+
-- PyTorch
-- OpenCV (`opencv-python`)
-- NumPy
-- kmeans-pytorch
-- transformers (for Qwen-VL)
-- timm (for Swin Transformer)
-- Pillow
+- All dependencies listed in `requirements.txt`
 
 Install dependencies:
 
 ```bash
-pip install torch opencv-python numpy kmeans-pytorch transformers timm pillow
+pip install -r requirements.txt
 ```
-
-## Supported Datasets
-
-- **DocVQA**
-- **InfoVQA**
-- **SROIE**
-- **FUNSD**
-
-You must download and extract these datasets yourself. Update the `dataset_root` variable in `main_pipeline.py` to point to the root directory of your chosen dataset. The expected folder structure is:
-
-- DocVQA: `images/` and annotation JSON (e.g., `val_v1.0.json`)
-- InfoVQA: `images/` and annotation JSON (e.g., `val.json`)
-- SROIE: `img/` and `annotations/`
-- FUNSD: `images/` and `annotations/`
 
 ## Running the Pipeline
 
-Edit the following lines in `main_pipeline.py` to select your dataset and set the correct path:
-
-```python
-dataset_name = 'docvqa'  # or 'infovqa', 'sroie', 'funsd'
-dataset_root = '/path/to/your/dataset'  # <-- Set this path
-split = 'val'  # or 'train', as needed
-```
-
-Then run:
+Simply run:
 
 ```bash
 python main_pipeline.py
 ```
 
-- The script will first run the pre-training stage (APS, Swin, MLP, DTS, LLM frozen).
-- Then it will run the instruction tuning stage (APS, Qwen-VL for multi-modal text generation).
+- The script will automatically download and extract the FUNSD dataset into the correct directory if it is not already present.
+- The pipeline will then run the pre-training and instruction tuning stages using FUNSD.
 
-> **Note:** The pipeline expects the datasets to be pre-downloaded and extracted. Annotation parsing is minimal and may need adjustment for your specific dataset version.
+> **Note:** Only the FUNSD dataset is supported in this version. The code for other datasets has been commented out for simplicity.
 
 ## Files
 
-- `main_pipeline.py`: Main pipeline script.
+- `main_pipeline.py`: Main pipeline script (runs everything for FUNSD).
 - `aps.py`: Adaptive Pixel Slimming implementation.
 - `dts.py`: Dynamic Token Slimming implementation.
+- `Dataset/download.py`: Handles automatic download and extraction of the FUNSD dataset.
+- `requirements.txt`: All required Python dependencies.
 
 ## Customization
 

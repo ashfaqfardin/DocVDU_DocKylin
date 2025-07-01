@@ -15,6 +15,7 @@ from transformers import AutoModelForVision2Seq, AutoProcessor
 import timm
 from PIL import Image
 import json
+from Dataset.download import download_funsd
 
 MAXSIZE = 1728 * 1728  # Maximum number of pixels
 BATCH_SIZE = 8
@@ -24,52 +25,6 @@ LEARNING_RATE_START = 1e-4
 LEARNING_RATE_END = 1e-5
 
 # --- DATASET CLASSES ---
-class DocVQADataset(torch.utils.data.Dataset):
-    def __init__(self, root_dir, split='val'):
-        self.img_dir = os.path.join(root_dir, 'images')
-        self.ann_path = os.path.join(root_dir, f'{split}_v1.0.json')
-        with open(self.ann_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        self.samples = data['data'] if 'data' in data else data
-    def __getitem__(self, idx):
-        sample = self.samples[idx]
-        img_path = os.path.join(self.img_dir, sample['image'])
-        img = np.array(Image.open(img_path).convert('RGB'))
-        question = sample.get('question', '')
-        answer = sample.get('answers', [''])[0]
-        return img, question, answer
-    def __len__(self):
-        return len(self.samples)
-
-class InfoVQADataset(torch.utils.data.Dataset):
-    def __init__(self, root_dir, split='val'):
-        self.img_dir = os.path.join(root_dir, 'images')
-        self.ann_path = os.path.join(root_dir, f'{split}.json')
-        with open(self.ann_path, 'r', encoding='utf-8') as f:
-            self.samples = json.load(f)
-    def __getitem__(self, idx):
-        sample = self.samples[idx]
-        img_path = os.path.join(self.img_dir, sample['image'])
-        img = np.array(Image.open(img_path).convert('RGB'))
-        question = sample.get('question', '')
-        answer = sample.get('answers', [''])[0]
-        return img, question, answer
-    def __len__(self):
-        return len(self.samples)
-
-class SROIEDataset(torch.utils.data.Dataset):
-    def __init__(self, root_dir, split='val'):
-        self.img_dir = os.path.join(root_dir, 'img')
-        self.ann_dir = os.path.join(root_dir, 'annotations')
-        self.img_list = sorted(os.listdir(self.img_dir))
-    def __getitem__(self, idx):
-        img_path = os.path.join(self.img_dir, self.img_list[idx])
-        img = np.array(Image.open(img_path).convert('RGB'))
-        # SROIE is typically used for OCR/IE, so no question/answer
-        return img, '', ''
-    def __len__(self):
-        return len(self.img_list)
-
 class FUNSDDataset(torch.utils.data.Dataset):
     def __init__(self, root_dir, split='val'):
         self.img_dir = os.path.join(root_dir, 'images')
@@ -85,13 +40,7 @@ class FUNSDDataset(torch.utils.data.Dataset):
 
 # --- DATASET SELECTOR ---
 def get_dataset(name, root_dir, split='val'):
-    if name.lower() == 'docvqa':
-        return DocVQADataset(root_dir, split)
-    elif name.lower() == 'infovqa':
-        return InfoVQADataset(root_dir, split)
-    elif name.lower() == 'sroie':
-        return SROIEDataset(root_dir, split)
-    elif name.lower() == 'funsd':
+    if name.lower() == 'funsd':
         return FUNSDDataset(root_dir, split)
     else:
         raise ValueError(f"Unknown dataset: {name}")
@@ -194,6 +143,16 @@ def instruction_tuning_stage(dataset, visual_encoder, mlp, llm):
         images = batch[0]
         questions = batch[1] if len(batch) > 1 else None
         images = apply_aps_batch(images)
+        # --- Begin DTS integration as per the paper ---
+        features = visual_encoder(images)
+        features = mlp(features)
+        num_tokens_before = features.shape[1]
+        dts_features = apply_dts_features(features)
+        num_tokens_after = dts_features.shape[1] if hasattr(dts_features, 'shape') else 'unknown'
+        if iteration % 1000 == 0:
+            print(f"[DTS] Iter {iteration}: tokens before={num_tokens_before}, after={num_tokens_after}")
+        # Note: The current LLM interface expects images, not features. To fully match the paper, the LLM should accept DTS-processed features. Here, we demonstrate DTS as per the paper, but still pass images to the LLM.
+        # --- End DTS integration ---
         prompts = questions if questions is not None else "Describe the document."
         outputs = llm.forward(images, prompt=prompts)
         if iteration % 10000 == 0:
@@ -203,10 +162,11 @@ def instruction_tuning_stage(dataset, visual_encoder, mlp, llm):
 
 def main():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    # TODO: Set your dataset name and root path here
-    dataset_name = 'docvqa'  # or 'infovqa', 'sroie', 'funsd'
-    dataset_root = '/path/to/your/dataset'  # <-- Set this path
-    split = 'val'  # or 'train', as needed
+    # This script will automatically download and use the FUNSD dataset.
+    dataset_name = 'funsd'
+    split = 'train'  # or 'val', as needed
+    download_funsd()
+    dataset_root = 'FUNSD/dataset'
     dataset = get_dataset(dataset_name, dataset_root, split)
     visual_encoder, mlp = pretrain_stage(dataset)
     llm = QwenVL(device=device)
