@@ -4,4 +4,5 @@ opencv-python
 transformers
 timm
 Pillow
-requests 
+requests
+peft>=0.8.2 
