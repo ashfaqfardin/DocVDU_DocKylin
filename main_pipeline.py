@@ -19,6 +19,7 @@ import json
 from Dataset.download import download_funsd
 from tqdm import tqdm
 from transformers.utils.quantization_config import BitsAndBytesConfig
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 
 
 MAXSIZE = 1728 * 1728  # Maximum number of pixels
@@ -103,7 +104,7 @@ class MLP(torch.nn.Module):
 class QwenVL:
     def __init__(self, device='cpu'):
         bnb_config = BitsAndBytesConfig(
-            load_in_8bit=True,  # or use load_in_4bit=True
+            load_in_4bit=True,  # or use load_in_4bit=True
             llm_int8_threshold=6.0,
             llm_int8_skip_modules=None,
             llm_int8_enable_fp32_cpu_offload=True,  # offload overflow to CPU
@@ -252,11 +253,20 @@ def pretrain_stage(dataset, num_epochs=1):
 
 def instruction_tuning_stage(dataset, visual_encoder, mlp, llm, num_epochs=1):
     print("Starting instruction tuning stage...")
-    # Unfreeze Qwen parameters for tuning
+    # --- LoRA setup ---
+    lora_config = LoraConfig(
+        r=8, lora_alpha=16, target_modules=["q_proj", "v_proj", "k_proj", "o_proj"], lora_dropout=0.05, bias="none", task_type="CAUSAL_LM"
+    )
+    llm.model = prepare_model_for_kbit_training(llm.model)
+    llm.model = get_peft_model(llm.model, lora_config)
+    llm.model.print_trainable_parameters()
+    # Only LoRA params are trainable
     for param in llm.model.parameters():
-        param.requires_grad = True
+        param.requires_grad = False
+    for name, param in llm.model.named_parameters():
+        if "lora" in name:
+            param.requires_grad = True
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
-    # Include Qwen parameters in optimizer
     optimizer = torch.optim.Adam(
         list(visual_encoder.parameters()) + list(mlp.parameters()) + list(llm.model.parameters()),
         lr=LEARNING_RATE_START
@@ -269,7 +279,8 @@ def instruction_tuning_stage(dataset, visual_encoder, mlp, llm, num_epochs=1):
             images = batch[0]
             annotation_texts = batch[1]
             images = apply_aps_batch(images)
-            images = torch.as_tensor(images, dtype=torch.float32, device=llm.model.device)
+            device = next(llm.model.parameters()).device
+            images = torch.as_tensor(images, dtype=torch.float32, device=device)
             features = visual_encoder(images)
             outputs = mlp(features)
             print("-"*40)
@@ -306,8 +317,8 @@ def instruction_tuning_stage(dataset, visual_encoder, mlp, llm, num_epochs=1):
                 print(f"Instruction tuning iteration {iteration}, loss={batch_loss / len(pil_images):.4f}")
         print(f"Instruction tuning epoch {epoch+1} average loss: {epoch_loss/num_batches:.4f}")
     print("Instruction tuning complete.")
-    # Save the fine-tuned Qwen model
-    llm.model.save_pretrained("qwen_finetuned")
+    # Save the LoRA adapter
+    llm.model.save_pretrained("qwen_lora_adapter")
 
 def main():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
