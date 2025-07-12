@@ -18,9 +18,11 @@ from PIL import Image
 import json
 from Dataset.download import download_funsd
 from tqdm import tqdm
+from transformers.utils.quantization_config import BitsAndBytesConfig
+
 
 MAXSIZE = 1728 * 1728  # Maximum number of pixels
-BATCH_SIZE = 8
+BATCH_SIZE = 1
 PRETRAIN_ITERS = 450_000
 INSTRUCTION_ITERS = 300_000
 LEARNING_RATE_START = 1e-4
@@ -100,11 +102,20 @@ class MLP(torch.nn.Module):
 
 class QwenVL:
     def __init__(self, device='cpu'):
+        bnb_config = BitsAndBytesConfig(
+            load_in_8bit=True,  # or use load_in_4bit=True
+            llm_int8_threshold=6.0,
+            llm_int8_skip_modules=None,
+            llm_int8_enable_fp32_cpu_offload=True,  # offload overflow to CPU
+        )
+
         self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             "Qwen/Qwen2.5-VL-7B-Instruct",
-            torch_dtype="auto",
-            device_map="auto" if device == "cuda" else None
+            quantization_config=bnb_config,
+            device_map="auto"
         )
+
+
         self.processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
         self.device = device
 
@@ -261,6 +272,7 @@ def instruction_tuning_stage(dataset, visual_encoder, mlp, llm, num_epochs=1):
             images = torch.as_tensor(images, dtype=torch.float32, device=llm.model.device)
             features = visual_encoder(images)
             outputs = mlp(features)
+            print("-"*40)
             pil_images = [Image.fromarray(img.astype(np.uint8)) for img in images.cpu().numpy()]
             batch_loss = 0.0
             for i, (pil_image, ann_text) in enumerate(zip(pil_images, annotation_texts)):
@@ -305,7 +317,7 @@ def main():
     download_funsd()
     dataset_root = 'FUNSD/dataset'
     dataset = get_dataset(dataset_name, dataset_root, split)
-    num_epochs = 10  # Set number of epochs here
+    num_epochs = 1  # Set number of epochs here
     visual_encoder, mlp = pretrain_stage(dataset, num_epochs=num_epochs)
     llm = QwenVL(device=device)
     instruction_tuning_stage(dataset, visual_encoder, mlp, llm, num_epochs=5)

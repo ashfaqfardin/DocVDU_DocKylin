@@ -68,11 +68,13 @@ Desktop.ini
 FUNSD/
 dataset.zip
 
-# Ignore the dataset download script
-DocKylin/Dataset/download.py
-
 # Logs
 *.log
 
 # Environment variables
-.env 
+.env
+
+# Checkpoints
+mlp.pth
+text_proj.pth
+visual_encoder.pth
